@@ -15,7 +15,8 @@ import matplotlib.pyplot as plt
 import os
 
 OUTPUT_PATH = './results'
-
+ACTION_DIM = 4
+STATE_DIM = 8
 
 
 def create_model():
@@ -24,7 +25,7 @@ def create_model():
 
     model = Sequential()
     model.add(Dense(16,
-                    input_shape=(8,),
+                    input_shape=(STATE_DIM,),
                     activation='relu',
                     kernel_initializer=keras.initializers.VarianceScaling(scale=1.0, distribution='uniform', mode='fan_avg'),
                     bias_initializer=keras.initializers.Ones()))
@@ -36,7 +37,7 @@ def create_model():
                     activation='relu',
                     kernel_initializer=keras.initializers.VarianceScaling(scale=1.0, distribution='uniform', mode='fan_avg'),
                     bias_initializer=keras.initializers.Ones()))
-    model.add(Dense(4,
+    model.add(Dense(ACTION_DIM,
                     activation='softmax',
                     kernel_initializer=keras.initializers.VarianceScaling(scale=1.0, distribution='uniform', mode='fan_avg'),
                     bias_initializer=keras.initializers.Ones()))
@@ -45,9 +46,12 @@ def create_model():
 class Reinforce(object):
     # Implementation of the policy gradient method REINFORCE.
 
-    def __init__(self, model, lr):
+    def __init__(self, model, lr, gamma, env):
+        self.env = env
         self.model = model
-        self.gamma = 0.9
+        self.gamma = gamma
+        self.epsilon = 0.5
+        self.epsilon_step = 0.45 * pow(10, -5)
         # TODO: Define any training operations and optimizers here, initialize
         #       your variables, or alternately compile your model here.
         self.model.compile(loss='categorical_crossentropy',
@@ -66,27 +70,43 @@ class Reinforce(object):
 
     def get_train_batch(self, states, actions, rewards):
         assert len(states) == len(actions)
-        action_batch = np.zeros([len(actions), 4])
+        action_batch = np.zeros([len(actions), ACTION_DIM])
         action_batch[np.arange(len(actions)), actions] = 1
 
         G = self.get_G(rewards)
-        G_batch = np.zeros([len(G), 4])
+        G_batch = np.zeros([len(G), ACTION_DIM])
         G_batch[np.arange(len(G_batch)), actions] = G
 
+        return G_batch, action_batch
         
   
+    def epsilon_greedy_policy(self, action_values, eps=None):
+        # Creating epsilon greedy probabilities to sample from.
+
+        if np.random.binomial(n=1, p=self.epsilon):
+            # sample random action
+            action = self.env.action_space.sample()
+        else:
+            #sample max action
+            action = self.greedy_policy(action_values)
+        return action
+
+
+    def greedy_policy(self, action_values):
+        # Creating greedy policy for test time. 
+        action = np.argmax(action_values)
+        return action
 	
 	
 
 
 
-        return G_batch, action_batch
 
     def train(self, env, gamma=1.0):
         # Trains the model on a single episode using REINFORCE.
         # TODO: Implement this method. It may be helpful to call the class
         #       method generate_episode() to generate training data.
-        states, actions, rewards = self.generate_episode(env)
+        states, actions, rewards = self.generate_episode(env, train=True)
         G_batch, action_batch = self.get_train_batch(states, actions, rewards) 
         history = self.model.fit(states, G_batch, epochs=1, batch_size=len(G_batch), verbose=0)
         loss = history.history['loss'][-1]
@@ -103,7 +123,7 @@ class Reinforce(object):
         episode_reward = sum(rewards)
         return episode_reward, len(rewards)
 
-    def generate_episode(self, env, render=False):
+    def generate_episode(self, env, render=False, train=False):
         # Generates an episode by executing the current policy in the given env.
         # Returns:
         # - a list of states, indexed by time step
@@ -120,13 +140,19 @@ class Reinforce(object):
             if render:
                 env.render()
             #action = env.action_space.sample()
-            action = np.argmax( self.model.predict(np.array(state, ndmin=2)) )
+            action_values =  self.model.predict(np.array(state, ndmin=2)) 
+            if train:
+                #action = self.epsilon_greedy_policy(action_values)
+                action = self.greedy_policy(action_values)
+            else:
+                action = self.greedy_policy(action_values)
             next_state, reward, done, info = env.step(action)
             #print('state', state, len(state))
             #print('action', action)	
             states.append(state)
             actions.append(action)
             rewards.append(reward)
+            self.epsilon = max(self.epsilon - self.epsilon_step, 0.05)
 
             state = next_state
         return np.array(states), np.array(actions), np.array(rewards)
@@ -142,6 +168,10 @@ def parse_arguments():
                         default=50000, help="Number of episodes to train on.")
     parser.add_argument('--lr', dest='lr', type=float,
                         default=5e-4, help="The learning rate.")
+    parser.add_argument('--gamma', dest='gamma', type=float,
+                        default=5e-4, help="Discount.")
+    parser.add_argument('--exp', dest='exp', type=str,
+                        default="EXP", help="experiment description")
 
     # https://stackoverflow.com/questions/15008758/parsing-boolean-values-with-argparse
     parser_group = parser.add_mutually_exclusive_group(required=False)
@@ -171,32 +201,52 @@ def main(args):
     args = parse_arguments()
     num_episodes = 5000#args.num_episodes
     test_episodes = 1000
-    lr = 0.001 #args.lr
+    val_episodes = 100
+    lr = args.lr#0.001 #args.lr
+    gamma = args.gamma
     render = args.render
 
     # Create the environment.
-    env = gym.make('LunarLander-v2')
+    env_name = 'LunarLander-v2'
+    #env_name = 'CartPole-v0'
+    env = gym.make(env_name)
 
     # Create the model
     model = create_model()
     model.get_config()
-    re = Reinforce(model, lr)
+    re = Reinforce(model, lr, gamma, env)
     loss_c = []
     acc_c = []
     rewards_c = []
+    val_rewards_c = []
+    mean_val_c = []
+    suffix = args.exp+'_'+env_name+str(lr)+'_'+str(gamma)
+
+    print('Training with lr = ', lr, '| Gamma = ', gamma)
     for i in range(num_episodes):
         [loss, acc, episode_steps, episode_reward] = re.train(env)
         print('TRAINING episode = %d/%d | episode_steps = %d | episode_reward = %d | loss = %f | acc = %f'%(i, num_episodes, episode_steps, episode_reward, loss, acc))
         loss_c.append(loss)
         acc_c.append(acc)
         rewards_c.append(episode_reward)
+        if i%100 == 0:
+            for j in range(val_episodes):
+                
+                val_reward, val_steps = re.test(env)        
+                val_rewards_c.append(val_reward)
 
-    plot_graph(rewards_c, 'Episdoe_rewards', 'Episodes', 'Training Rewards')
-    plot_graph(loss_c, 'Training_loss', 'Episodes', 'Training Loss')
+                print('VALIDATION episode = %d/%d | episode_steps = %d | episode_reward = %d '%(j, val_episodes, val_steps, val_reward))
+            mean_val_c.append(np.mean(val_rewards_c))
 
+
+
+
+    plot_graph(rewards_c, suffix+'_Episode_rewards', 'Episodes', 'Training Rewards')
+    plot_graph(loss_c, suffix+'_Training_loss', 'Episodes', 'Training Loss')
+    plot_graph(mean_val_c, suffix+'_mean_val_rewards', 'Episodes', 'Val Rewards')
+    
     #save the mdoel
-    re.save_model('lunar')
-
+    re.save_model(suffix)
     # test for a 1000 episodes
     test_rewards = []
     for i in range(test_episodes):
@@ -205,7 +255,7 @@ def main(args):
     
         print('TESTING episode = %d/%d | episode_steps = %d | episode_reward = %d '%(i, test_episodes, episode_steps, episode_reward))
 
-    plot_graph(test_rewards, 'Test_rewards', 'Test Episodes', 'Test Rewards')
+    plot_graph(test_rewards, suffix+'_Test_rewards', 'Test Episodes', 'Test Rewards')
 
 if __name__ == '__main__':
     main(sys.argv)
