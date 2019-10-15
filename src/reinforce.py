@@ -28,19 +28,19 @@ def create_model():
                     input_shape=(STATE_DIM,),
                     activation='relu',
                     kernel_initializer=keras.initializers.VarianceScaling(scale=1.0, distribution='uniform', mode='fan_avg'),
-                    bias_initializer=keras.initializers.Ones()))
+                    bias_initializer=keras.initializers.Zeros()))
     model.add(Dense(16,
                     activation='relu',
                     kernel_initializer=keras.initializers.VarianceScaling(scale=1.0, distribution='uniform', mode='fan_avg'),
-                    bias_initializer=keras.initializers.Ones()))
+                    bias_initializer=keras.initializers.Zeros()))
     model.add(Dense(16,
                     activation='relu',
                     kernel_initializer=keras.initializers.VarianceScaling(scale=1.0, distribution='uniform', mode='fan_avg'),
-                    bias_initializer=keras.initializers.Ones()))
+                    bias_initializer=keras.initializers.Zeros()))
     model.add(Dense(ACTION_DIM,
                     activation='softmax',
                     kernel_initializer=keras.initializers.VarianceScaling(scale=1.0, distribution='uniform', mode='fan_avg'),
-                    bias_initializer=keras.initializers.Ones()))
+                    bias_initializer=keras.initializers.Zeros()))
     return model
 
 class Reinforce(object):
@@ -50,8 +50,6 @@ class Reinforce(object):
         self.env = env
         self.model = model
         self.gamma = gamma
-        self.epsilon = 0.5
-        self.epsilon_step = 0.45 * pow(10, -5)
         # TODO: Define any training operations and optimizers here, initialize
         #       your variables, or alternately compile your model here.
         self.model.compile(loss='categorical_crossentropy',
@@ -63,8 +61,11 @@ class Reinforce(object):
         G = np.zeros(len(rewards))
         temp = 0
         for i in range(len(G)-1, -1, -1):
-            G[i] = rewards[i] + self.gamma*temp
+            G[i] = rewards[i]*0.01 + self.gamma*temp
             temp = G[i]
+
+        # Normalize G
+        G = (G - np.mean(G)) / np.std(G)
         return G
 
 
@@ -80,21 +81,11 @@ class Reinforce(object):
         return G_batch, action_batch
         
   
-    def epsilon_greedy_policy(self, action_values, eps=None):
-        # Creating epsilon greedy probabilities to sample from.
 
-        if np.random.binomial(n=1, p=self.epsilon):
-            # sample random action
-            action = self.env.action_space.sample()
-        else:
-            #sample max action
-            action = self.greedy_policy(action_values)
-        return action
-
-
-    def greedy_policy(self, action_values):
-        # Creating greedy policy for test time. 
-        action = np.argmax(action_values)
+    def sample_action(self, action_prob):
+        # Creating greedy policy for test time.
+        actions = [x for x in range(ACTION_DIM)] 
+        action = np.random.choice(actions ,p=np.squeeze(action_prob))
         return action
 	
 	
@@ -119,7 +110,7 @@ class Reinforce(object):
         # Trains the model on a single episode using REINFORCE.
         # TODO: Implement this method. It may be helpful to call the class
         #       method generate_episode() to generate training data.
-        _, _, rewards = self.generate_episode(env)
+        _, _, rewards = self.generate_episode(env, render=False, train=False)
         episode_reward = sum(rewards)
         return episode_reward, len(rewards)
 
@@ -139,20 +130,15 @@ class Reinforce(object):
             # replace random action with policy
             if render:
                 env.render()
-            #action = env.action_space.sample()
             action_values =  self.model.predict(np.array(state, ndmin=2)) 
             if train:
-                #action = self.epsilon_greedy_policy(action_values)
-                action = self.greedy_policy(action_values)
+                action = self.sample_action(action_values)
             else:
-                action = self.greedy_policy(action_values)
+                action = np.argmax(action_values)
             next_state, reward, done, info = env.step(action)
-            #print('state', state, len(state))
-            #print('action', action)	
             states.append(state)
             actions.append(action)
             rewards.append(reward)
-            self.epsilon = max(self.epsilon - self.epsilon_step, 0.05)
 
             state = next_state
         return np.array(states), np.array(actions), np.array(rewards)
@@ -194,14 +180,20 @@ def plot_graph(data, title, xlabel, ylabel):
     plt.ylabel(ylabel)
     plt.savefig(os.path.join(OUTPUT_PATH,title+'.png'))
 
-
+def plot_errorbar(x, y, yerr, title, xlabel, ylabel, label=None):
+    plt.figure(figsize=(12,5))
+    plt.title(title)
+    plt.errorbar(x, y, yerr, label=label)
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.savefig(os.path.join(OUTPUT_PATH, title+'.png'))
 
 def main(args):
     # Parse command-line arguments.
     args = parse_arguments()
-    num_episodes = 5000#args.num_episodes
-    test_episodes = 1000
-    val_episodes = 100
+    num_episodes = args.num_episodes
+    test_episodes = 10 #1000
+    val_episodes = 10 #100
     lr = args.lr#0.001 #args.lr
     gamma = args.gamma
     render = args.render
@@ -220,8 +212,9 @@ def main(args):
     rewards_c = []
     val_rewards_c = []
     mean_val_c = []
+    std_val_c = []
     suffix = args.exp+'_'+env_name+str(lr)+'_'+str(gamma)
-
+    x = []
     print('Training with lr = ', lr, '| Gamma = ', gamma)
     for i in range(num_episodes):
         [loss, acc, episode_steps, episode_reward] = re.train(env)
@@ -229,7 +222,8 @@ def main(args):
         loss_c.append(loss)
         acc_c.append(acc)
         rewards_c.append(episode_reward)
-        if i%100 == 0:
+        #if i%500 == 0:
+        if i%5 == 0:
             for j in range(val_episodes):
                 
                 val_reward, val_steps = re.test(env)        
@@ -237,13 +231,13 @@ def main(args):
 
                 print('VALIDATION episode = %d/%d | episode_steps = %d | episode_reward = %d '%(j, val_episodes, val_steps, val_reward))
             mean_val_c.append(np.mean(val_rewards_c))
+            std_val_c.append(np.std(val_rewards_c))
+            x.append(i)
 
-
-
-
+    
     plot_graph(rewards_c, suffix+'_Episode_rewards', 'Episodes', 'Training Rewards')
     plot_graph(loss_c, suffix+'_Training_loss', 'Episodes', 'Training Loss')
-    plot_graph(mean_val_c, suffix+'_mean_val_rewards', 'Episodes', 'Val Rewards')
+    plot_errorbar(x, mean_val_c, std_val_c, suffix+'_mean_val_rewards', 'Episodes', 'Val Rewards', label='std')
     
     #save the mdoel
     re.save_model(suffix)
