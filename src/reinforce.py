@@ -93,7 +93,7 @@ class Reinforce(object):
 
 
 
-    def train(self, env, gamma=1.0):
+    def train(self, env):
         # Trains the model on a single episode using REINFORCE.
         # TODO: Implement this method. It may be helpful to call the class
         #       method generate_episode() to generate training data.
@@ -106,7 +106,7 @@ class Reinforce(object):
         return loss, acc, len(states), episode_reward
 
 
-    def test(self, env, gamma=1.0):
+    def test(self, env):
         # Trains the model on a single episode using REINFORCE.
         # TODO: Implement this method. It may be helpful to call the class
         #       method generate_episode() to generate training data.
@@ -192,8 +192,8 @@ def main(args):
     # Parse command-line arguments.
     args = parse_arguments()
     num_episodes = args.num_episodes
-    test_episodes = 10 #1000
-    val_episodes = 10 #100
+    test_episodes = 1000
+    val_episodes = 100
     lr = args.lr#0.001 #args.lr
     gamma = args.gamma
     render = args.render
@@ -222,8 +222,7 @@ def main(args):
         loss_c.append(loss)
         acc_c.append(acc)
         rewards_c.append(episode_reward)
-        #if i%500 == 0:
-        if i%5 == 0:
+        if i%500 == 0:
             for j in range(val_episodes):
                 
                 val_reward, val_steps = re.test(env)        
