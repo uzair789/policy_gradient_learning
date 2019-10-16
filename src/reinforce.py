@@ -106,11 +106,11 @@ class Reinforce(object):
         return loss, acc, len(states), episode_reward
 
 
-    def test(self, env):
+    def test(self, env, render=False):
         # Trains the model on a single episode using REINFORCE.
         # TODO: Implement this method. It may be helpful to call the class
         #       method generate_episode() to generate training data.
-        _, _, rewards = self.generate_episode(env, render=False, train=False)
+        _, _, rewards = self.generate_episode(env, render=render, train=False)
         episode_reward = sum(rewards)
         return episode_reward, len(rewards)
 

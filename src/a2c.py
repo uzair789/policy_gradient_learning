@@ -4,7 +4,7 @@ import numpy as np
 import tensorflow as tf
 import keras
 from keras.models import Sequential
-from keras.layers import Dense
+from keras.layers import Activation, Dense, BatchNormalization
 
 
 
@@ -24,17 +24,20 @@ def create_actor_model():
     model = Sequential()
     model.add(Dense(16,
                     input_shape=(STATE_DIM,),
-                    activation='relu',
                     kernel_initializer=keras.initializers.VarianceScaling(scale=1.0, distribution='uniform', mode='fan_avg'),
                     bias_initializer=keras.initializers.Zeros()))
+    #model.add(BatchNormalization())
+    model.add(Activation('relu'))
     model.add(Dense(16,
-                    activation='relu',
                     kernel_initializer=keras.initializers.VarianceScaling(scale=1.0, distribution='uniform', mode='fan_avg'),
                     bias_initializer=keras.initializers.Zeros()))
+    #model.add(BatchNormalization())
+    model.add(Activation('relu'))
     model.add(Dense(16,
-                    activation='relu',
                     kernel_initializer=keras.initializers.VarianceScaling(scale=1.0, distribution='uniform', mode='fan_avg'),
                     bias_initializer=keras.initializers.Zeros()))
+    #model.add(BatchNormalization())
+    model.add(Activation('relu'))
     model.add(Dense(ACTION_DIM,
                     activation='softmax',
                     kernel_initializer=keras.initializers.VarianceScaling(scale=1.0, distribution='uniform', mode='fan_avg'),
@@ -48,17 +51,20 @@ def create_critic_model():
     model = Sequential()
     model.add(Dense(16,
                     input_shape=(STATE_DIM,),
-                    activation='relu',
                     kernel_initializer=keras.initializers.VarianceScaling(scale=1.0, distribution='uniform', mode='fan_avg'),
                     bias_initializer=keras.initializers.Zeros()))
+    #model.add(BatchNormalization())
+    model.add(Activation('relu'))
     model.add(Dense(16,
-                    activation='relu',
                     kernel_initializer=keras.initializers.VarianceScaling(scale=1.0, distribution='uniform', mode='fan_avg'),
                     bias_initializer=keras.initializers.Zeros()))
+    #model.add(BatchNormalization())
+    model.add(Activation('relu'))
     model.add(Dense(16,
-                    activation='relu',
                     kernel_initializer=keras.initializers.VarianceScaling(scale=1.0, distribution='uniform', mode='fan_avg'),
                     bias_initializer=keras.initializers.Zeros()))
+    #model.add(BatchNormalization())
+    model.add(Activation('relu'))
     model.add(Dense(1,
                     kernel_initializer=keras.initializers.VarianceScaling(scale=1.0, distribution='uniform', mode='fan_avg'),
                     bias_initializer=keras.initializers.Zeros()))
@@ -181,13 +187,13 @@ def parse_arguments():
 def main(args):
     # Parse command-line arguments.
     args = parse_arguments()
-    num_episodes = 5000#args.num_episodes
-    lr = 0.001 #args.lr
-    critic_lr = 0.001 #args.critic_lr
-    n = 20 #args.n
+    num_episodes = 10000#args.num_episodes
+    lr = args.lr
+    critic_lr = args.critic_lr
+    n = args.n
     gamma = args.gamma
-    test_episodes = 500
-    #render = args.render
+    test_episodes = 1000
+    val_episodes = 100    #render = args.render
 
     # Create the environment.
     env_name = 'LunarLander-v2'
@@ -203,7 +209,13 @@ def main(args):
     actor_loss = []
     critic_loss = []
     rewards_c = []
-    
+    val_rewards_c = []
+    mean_val_c = []
+    std_val_c = []
+    x = []    
+
+
+
     suffix = args.exp+'_'+env_name+'actor_lr_'+str(lr)+'critic_lr'+str(critic_lr)+'gamma_'+str(gamma)+'n_'+str(n)
     for i in range(num_episodes):
         [a_l, a_a, c_l, c_a, episode_steps, episode_reward] = a2c.train(env)
@@ -211,17 +223,25 @@ def main(args):
         actor_loss.append(a_l)
         critic_loss.append(c_l)
         rewards_c.append(episode_reward)
-
+        if i%500 ==0:
+            for j in range(val_episodes):
+                val_reward, val_steps = a2c.test(env)
+                val_rewards_c.append(val_reward)
+                print('VALIDATION episode = %d/%d | episode_steps = %d | episode_reward = %d '%(j, val_episodes, val_steps, val_reward))
+            mean_val_c.append(np.mean(val_rewards_c))
+            std_val_c.append(np.std(val_rewards_c))
+            x.append(i)
     plot_graph(rewards_c, suffix+'TrainingRewards', 'Episodes', 'TrainingRewards')
     plot_graph(actor_loss, suffix+'ActorTrainingLoss', 'Episodes', 'ActorTrainingLoss')
     plot_graph(critic_loss, suffix+'CriticTrainingLoss', 'Episodes', 'CriticTrainingLoss')
         
+    plot_errorbar(x, mean_val_c, std_val_c, suffix+'_mean_val_rewards', 'Episodes', 'Val Rewards', label='std')
     a2c.save_model(suffix)
 
     # Test episodes
     test_rewards = []
     for i in range(test_episodes):
-        episode_reward, episode_steps = a2c.test(env)
+        episode_reward, episode_steps = a2c.test(env, render=True)
         test_rewards.append(episode_reward)
         print('TESTING episode = %d/%d | episode_steps = %d | episode_reward = %d '%(i, test_episodes, episode_steps, episode_reward))
 
