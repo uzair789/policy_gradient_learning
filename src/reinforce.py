@@ -101,7 +101,7 @@ class Reinforce(object):
         G_batch, action_batch = self.get_train_batch(states, actions, rewards) 
         history = self.model.fit(states, G_batch, epochs=1, batch_size=len(G_batch), verbose=0)
         loss = history.history['loss'][-1]
-        acc = history.history['acc'][-1]
+        acc = history.history['accuracy'][-1]
         episode_reward = sum(rewards)
         return loss, acc, len(states), episode_reward
 
