@@ -187,7 +187,7 @@ def parse_arguments():
 def main(args):
     # Parse command-line arguments.
     args = parse_arguments()
-    num_episodes = 10000#args.num_episodes
+    num_episodes = args.num_episodes
     lr = args.lr
     critic_lr = args.critic_lr
     n = args.n
@@ -231,17 +231,28 @@ def main(args):
             mean_val_c.append(np.mean(val_rewards_c))
             std_val_c.append(np.std(val_rewards_c))
             x.append(i)
-    plot_graph(rewards_c, suffix+'TrainingRewards', 'Episodes', 'TrainingRewards')
-    plot_graph(actor_loss, suffix+'ActorTrainingLoss', 'Episodes', 'ActorTrainingLoss')
-    plot_graph(critic_loss, suffix+'CriticTrainingLoss', 'Episodes', 'CriticTrainingLoss')
+    
+        if i%5000==0:
+            
+            plot_graph(rewards_c, suffix+str(i)+'_TrainingRewards', 'Episodes', 'TrainingRewards')
+            plot_graph(actor_loss, suffix+str(i)+'_ActorTrainingLoss', 'Episodes', 'ActorTrainingLoss')
+            plot_graph(critic_loss, suffix+str(i)+'_CriticTrainingLoss', 'Episodes', 'CriticTrainingLoss')
         
-    plot_errorbar(x, mean_val_c, std_val_c, suffix+'_mean_val_rewards', 'Episodes', 'Val Rewards', label='std')
-    a2c.save_model(suffix)
+            plot_errorbar(x, mean_val_c, std_val_c, suffix+str(i)+'_mean_val_rewards', 'Episodes', 'Val Rewards', label='std')
+            a2c.save_model(str(i)+'_'+suffix)
+
+
+    plot_graph(rewards_c, suffix+'Complete_TrainingRewards', 'Episodes', 'TrainingRewards')
+    plot_graph(actor_loss, suffix+'Complete_ActorTrainingLoss', 'Episodes', 'ActorTrainingLoss')
+    plot_graph(critic_loss, suffix+'Complete_CriticTrainingLoss', 'Episodes', 'CriticTrainingLoss')
+        
+    plot_errorbar(x, mean_val_c, std_val_c, suffix+'Compelte_mean_val_rewards', 'Episodes', 'Val Rewards', label='std')
+    a2c.save_model('Complete_'+suffix)
 
     # Test episodes
     test_rewards = []
     for i in range(test_episodes):
-        episode_reward, episode_steps = a2c.test(env, render=True)
+        episode_reward, episode_steps = a2c.test(env)
         test_rewards.append(episode_reward)
         print('TESTING episode = %d/%d | episode_steps = %d | episode_reward = %d '%(i, test_episodes, episode_steps, episode_reward))
 
